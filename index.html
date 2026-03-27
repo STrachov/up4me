@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offer Matcher</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <p class="eyebrow">Local V1</p>
+      <h1>Offer Matcher</h1>
+      <p class="hero-copy">
+        Вставь HTML страницы, выдели карточки вакансий через CSS или XPath и отправь
+        извлеченный текст в OpenAI для первичной оценки соответствия профилю.
+      </p>
+    </section>
+
+    <section class="panel settings-panel">
+      <div class="panel-heading">
+        <h2>Настройки</h2>
+      </div>
+
+      <label class="field">
+        <span>OpenAI API Key</span>
+        <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off">
+      </label>
+
+      <label class="field">
+        <span>Модель</span>
+        <input id="model" type="text" value="gpt-5-mini">
+      </label>
+
+      <label class="field">
+        <span>Профиль</span>
+        <select id="profilePreset">
+          <option value="profile-short.txt">Short profile</option>
+          <option value="profile-long.txt">Long profile</option>
+        </select>
+      </label>
+
+      <div class="field">
+        <span>Загруженный профиль</span>
+        <div id="profileStatus" class="inline-note">Пока не загружен.</div>
+      </div>
+
+      <label class="field">
+        <span>Инструкция для анализа</span>
+        <textarea id="analysisPrompt" rows="10" placeholder="Сюда можно позже подправить критерии оценки.">Тебе будет передан список офферов, разделенных служебными заголовками вида "=== OFFER N ===". Оцени каждый оффер отдельно, не смешивай их между собой и не делай один общий вывод вместо списка.
+
+Верни строгий JSON по схеме:
+{
+  "offers": [
+    {
+      "offer_index": 1,
+      "fit_score": 0,
+      "recommendation": "apply_now | maybe | skip",
+      "niche_match": "exact | adjacent | weak",
+      "best_matching_portfolio_item": "",
+      "key_reasons": [],
+      "red_flags": [],
+      "questions_to_ask_client": [],
+      "suggested_project_shape": ""
+    }
+  ]
+}
+Для каждого оффера сохрани его порядковый номер в поле offer_index. Оцени fit_score от 0 до 100. Не завышай оценку только из-за AI-ключевых слов. Смотри на реальное совпадение по OCR, Document AI, structured extraction, Python backend, RAG, classification, коммерческую адекватность и project-based fit.</textarea>
+      </label>
+    </section>
+
+    <section class="panel extraction-panel">
+      <div class="panel-heading">
+        <h2>Извлечение</h2>
+        <div class="mode-switch" role="group" aria-label="Selector type">
+          <button id="cssModeButton" class="mode-button is-active" type="button" data-mode="css">CSS</button>
+          <button id="xpathModeButton" class="mode-button" type="button" data-mode="xpath">XPath</button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Селектор</span>
+        <input id="selectorInput" type="text" placeholder=".job-card .description">
+      </label>
+
+      <label class="field">
+        <span>HTML</span>
+        <textarea id="htmlInput" rows="16" placeholder="<html>..."></textarea>
+      </label>
+
+      <div class="button-row">
+        <button id="extractButton" class="action-button" type="button">Extract</button>
+      </div>
+
+      <div class="stats" id="statsBar">
+        <div class="stat">
+          <span class="stat-label">Mode</span>
+          <strong id="currentModeLabel">CSS</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Matches</span>
+          <strong id="matchCount">0</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Chars</span>
+          <strong id="charCount">0</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="panel-heading">
+        <h2>Предпросмотр</h2>
+      </div>
+      <div class="preview-grid">
+        <div>
+          <h3>Найденные блоки</h3>
+          <ol id="matchesList" class="matches-list"></ol>
+        </div>
+        <div>
+          <h3>Итоговый текст</h3>
+          <pre id="combinedText" class="output-block"></pre>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="analyzeButton" class="action-button action-button-accent" type="button">Analyze</button>
+      </div>
+    </section>
+
+    <section class="panel result-panel">
+      <div class="panel-heading">
+        <h2>Результат анализа</h2>
+        <div class="button-row">
+          <button id="chooseFolderButton" class="action-button" type="button">Choose Results Folder</button>
+          <button id="saveJsonButton" class="action-button" type="button" disabled>Save JSON</button>
+        </div>
+      </div>
+      <div id="folderStatus" class="inline-note">Папка не выбрана. Сохранение будет через обычную загрузку.</div>
+      <pre id="resultOutput" class="output-block muted">Пока пусто.</pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

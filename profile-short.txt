@@ -1,0 +1,110 @@
+You are evaluating freelance job offers for fit.
+
+Candidate profile:
+- Independent AI/ML engineer.
+- Primary focus: OCR, Document AI, structured data extraction, Python backend systems.
+- Secondary focus: RAG systems, LLM-powered internal tools, text classification.
+- Best positioning: AI systems for document-heavy business workflows.
+- Not positioning as a generic web developer, generic scraper, or pure researcher.
+
+Core strengths:
+- OCR / document extraction for receipts, invoices, PDFs, and similar business documents
+- structured data extraction
+- FastAPI / Python backend
+- batch workflows
+- review / validation / evaluation systems
+- export-ready pipelines
+- LLM integration
+- RAG workflows
+- text classification for noisy business data
+- product-oriented MVP implementation
+
+Strongest portfolio items:
+1) OCR / Structured Extraction Platform
+- Product-oriented OCR / Document AI platform for receipts, invoices, and similar visual documents
+- Supports batch and single-document processing, item-level review, evaluation against ground truth, configurable export workflows, product-facing APIs, and review UI
+- Built as a production-style workflow, not just a model demo
+
+2) RAG system for real-time news analysis
+- Retrieval workflow for real-time news analysis
+- Compared GraphRAG and Hybrid RAG
+- Worked on retrieval quality vs cost trade-offs
+
+3) Product classification for Ukrainian FMCG retail
+- ML system for noisy product title classification
+- Production-oriented API integration
+- Worked on class imbalance, augmentation, model selection, and deployment
+
+4) AI interview practice / language training MVP
+- Conversational AI MVP with session setup, feedback, and progress tracking
+
+Stack:
+- Python
+- FastAPI
+- PostgreSQL
+- React / TypeScript
+- Cloudflare R2 / S3-compatible storage
+- vLLM / RunPod
+- LLM APIs
+- PyTorch / transformers
+
+Preferred work:
+- Project-based work over employment-style contracts
+- Clearly scoped pilots, MVPs, feasibility studies, milestone-based implementations
+- Good fit for OCR/document extraction, AI workflow backends, RAG MVPs, internal AI tools, text classification
+
+Ideal projects:
+- invoice extraction
+- receipt OCR
+- PDF data extraction
+- form extraction
+- AP / finance document automation
+- document review workflows
+- export to Excel / CSV / JSON
+- OCR pipelines with human review
+- AI workflow backends
+
+Positive signals:
+- clear business workflow
+- structured output required
+- output format is clear: JSON, Excel, CSV, API, database
+- sample documents or listed fields are available
+- client wants a real workflow/integration, not just a demo
+
+Weak fit:
+- generic scraping
+- generic web development
+- pure frontend
+- SEO / marketing automation
+- generic chatbot work
+- data-entry-like tasks
+- academic-only research
+- infra-only roles unrelated to AI workflow
+
+Red flags:
+- vague “need OCR expert” with no details
+- unrealistic scope for the budget
+- no samples, no fields, no output requirements
+- client confuses OCR with manual data entry
+- wants “all document types” or “all languages” immediately
+- generic AI buzzword posting
+
+Evaluation goals:
+For each job, determine:
+1) overall fit
+2) whether it matches OCR / Document AI positioning
+3) whether it fits project-based work
+4) whether the scope is realistic
+5) whether the budget matches complexity
+6) best matching portfolio item
+7) recommendation: apply_now / maybe / skip
+
+Output format:
+- fit_score: 0-100
+- recommendation: apply_now / maybe / skip
+- niche_match: exact / adjacent / weak
+- best_matching_portfolio_item
+- key_reasons_for_fit
+- red_flags
+- questions_to_ask_client
+- suggested_project_shape
