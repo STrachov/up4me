@@ -1,5 +1,5 @@
 const state = {
-  mode: "css",
+  mode: "xpath",
   matches: [],
   extractedOffers: [],
   combinedText: "",
@@ -537,9 +537,6 @@ async function analyzeOffer() {
                       type: "string",
                       enum: ["exact", "adjacent", "weak"]
                     },
-                    best_matching_portfolio_item: {
-                      type: "string"
-                    },
                     key_reasons: {
                       type: "array",
                       items: { type: "string" }
@@ -553,7 +550,8 @@ async function analyzeOffer() {
                       items: { type: "string" }
                     },
                     suggested_project_shape: {
-                      type: "string"
+                      type: "string",
+                      enum: ["pilot", "milestone", "hourly", "skip"]
                     }
                   },
                   required: [
@@ -561,7 +559,6 @@ async function analyzeOffer() {
                     "fit_score",
                     "recommendation",
                     "niche_match",
-                    "best_matching_portfolio_item",
                     "key_reasons",
                     "red_flags",
                     "questions_to_ask_client",
@@ -663,7 +660,7 @@ elements.saveJsonButton.addEventListener("click", async () => {
   }
 });
 
-setMode("css");
+setMode("xpath");
 loadPersistedSettings();
 updatePreview([]);
 updateFolderStatus();

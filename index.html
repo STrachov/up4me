@@ -57,15 +57,14 @@
       "fit_score": 0,
       "recommendation": "apply_now | maybe | skip",
       "niche_match": "exact | adjacent | weak",
-      "best_matching_portfolio_item": "",
       "key_reasons": [],
       "red_flags": [],
       "questions_to_ask_client": [],
-      "suggested_project_shape": ""
+      "suggested_project_shape": "pilot | milestone | hourly | skip"
     }
   ]
 }
-Для каждого оффера сохрани его порядковый номер в поле offer_index. Оцени fit_score от 0 до 100. Не завышай оценку только из-за AI-ключевых слов. Смотри на реальное совпадение по OCR, Document AI, structured extraction, Python backend, RAG, classification, коммерческую адекватность и project-based fit.</textarea>
+Для каждого оффера сохрани его порядковый номер в поле offer_index. Оцени fit_score от 0 до 100. Не завышай оценку только из-за AI-ключевых слов. Смотри на реальное совпадение по OCR, Document AI, structured extraction, extraction quality, validation/review workflow, Python backend, коммерческую адекватность и project-based fit.</textarea>
       </label>
     </section>
 
@@ -73,8 +72,8 @@
       <div class="panel-heading">
         <h2>Извлечение</h2>
         <div class="mode-switch" role="group" aria-label="Selector type">
-          <button id="cssModeButton" class="mode-button is-active" type="button" data-mode="css">CSS</button>
-          <button id="xpathModeButton" class="mode-button" type="button" data-mode="xpath">XPath</button>
+          <button id="cssModeButton" class="mode-button" type="button" data-mode="css">CSS</button>
+          <button id="xpathModeButton" class="mode-button is-active" type="button" data-mode="xpath">XPath</button>
         </div>
       </div>
 
