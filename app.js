@@ -5,18 +5,21 @@ const state = {
   combinedText: "",
   profileText: "",
   lastResultJson: null,
-  resultsDirectoryHandle: null
+  resultsDirectoryHandle: null,
+  favouriteKeys: new Set()
 };
 
 const storageKeys = {
   apiKey: "offer-matcher.apiKey",
   model: "offer-matcher.model",
-  selector: "offer-matcher.selector"
+  selector: "offer-matcher.selector",
+  searchPrefix: "offer-matcher.searchPrefix"
 };
 
 const elements = {
   apiKey: document.querySelector("#apiKey"),
   model: document.querySelector("#model"),
+  searchPrefix: document.querySelector("#searchPrefix"),
   profilePreset: document.querySelector("#profilePreset"),
   profileStatus: document.querySelector("#profileStatus"),
   analysisPrompt: document.querySelector("#analysisPrompt"),
@@ -27,12 +30,16 @@ const elements = {
   extractButton: document.querySelector("#extractButton"),
   analyzeButton: document.querySelector("#analyzeButton"),
   chooseFolderButton: document.querySelector("#chooseFolderButton"),
+  loadJsonButton: document.querySelector("#loadJsonButton"),
+  loadJsonInput: document.querySelector("#loadJsonInput"),
   currentModeLabel: document.querySelector("#currentModeLabel"),
   matchCount: document.querySelector("#matchCount"),
   charCount: document.querySelector("#charCount"),
   matchesList: document.querySelector("#matchesList"),
   combinedText: document.querySelector("#combinedText"),
+  resultStatus: document.querySelector("#resultStatus"),
   resultOutput: document.querySelector("#resultOutput"),
+  saveFavouriteButton: document.querySelector("#saveFavouriteButton"),
   saveJsonButton: document.querySelector("#saveJsonButton"),
   folderStatus: document.querySelector("#folderStatus")
 };
@@ -43,6 +50,8 @@ const dbConfig = {
   storeName: "settings",
   directoryKey: "results-directory"
 };
+
+const analysisIndexFileName = "analysis-index.json";
 
 function setMode(mode) {
   state.mode = mode;
@@ -123,6 +132,7 @@ function loadPersistedSettings() {
   const savedApiKey = localStorage.getItem(storageKeys.apiKey);
   const savedModel = localStorage.getItem(storageKeys.model);
   const savedSelector = localStorage.getItem(storageKeys.selector);
+  const savedSearchPrefix = localStorage.getItem(storageKeys.searchPrefix);
 
   if (savedApiKey) {
     elements.apiKey.value = savedApiKey;
@@ -134,6 +144,10 @@ function loadPersistedSettings() {
 
   if (savedSelector) {
     elements.selectorInput.value = savedSelector;
+  }
+
+  if (savedSearchPrefix) {
+    elements.searchPrefix.value = savedSearchPrefix;
   }
 }
 
@@ -222,7 +236,7 @@ function buildOffersText(offers) {
   ].join("\n")).join("\n\n");
 }
 
-function mergeOfferMetadata(resultJson) {
+function mergeOfferMetadata(resultJson, sourceOffers = state.extractedOffers) {
   if (!resultJson || !Array.isArray(resultJson.offers)) {
     return resultJson;
   }
@@ -230,7 +244,7 @@ function mergeOfferMetadata(resultJson) {
   return {
     ...resultJson,
     offers: resultJson.offers.map((offerResult) => {
-      const extracted = state.extractedOffers.find((item) => item.offer_index === offerResult.offer_index);
+      const extracted = sourceOffers.find((item) => item.offer_index === offerResult.offer_index);
       if (!extracted) {
         return offerResult;
       }
@@ -243,6 +257,163 @@ function mergeOfferMetadata(resultJson) {
       };
     })
   };
+}
+
+async function sha256Hex(input) {
+  const encoded = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function enrichOffersWithIdentity(offers) {
+  return Promise.all(offers.map(async (offer) => {
+    const contentHash = await sha256Hex([
+      offer.title || "",
+      offer.description || ""
+    ].join("\n"));
+
+    return {
+      ...offer,
+      content_hash: contentHash,
+      offer_key: offer.url || `hash:${contentHash}`
+    };
+  }));
+}
+
+function createEmptyAnalysisIndex() {
+  return { entries: [] };
+}
+
+async function ensureResultsFolderWritePermission() {
+  if (!state.resultsDirectoryHandle) {
+    return false;
+  }
+
+  const permission = await state.resultsDirectoryHandle.requestPermission({ mode: "readwrite" });
+  return permission === "granted";
+}
+
+async function readAnalysisIndex() {
+  if (!state.resultsDirectoryHandle) {
+    return createEmptyAnalysisIndex();
+  }
+
+  const hasPermission = await ensureResultsFolderWritePermission();
+  if (!hasPermission) {
+    throw new Error("Нет доступа к папке результатов для чтения analysis-index.json.");
+  }
+
+  const fileHandle = await state.resultsDirectoryHandle.getFileHandle(analysisIndexFileName, { create: true });
+  const file = await fileHandle.getFile();
+  const text = await file.text();
+
+  if (!text.trim()) {
+    return createEmptyAnalysisIndex();
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed.entries) ? parsed : createEmptyAnalysisIndex();
+  } catch (error) {
+    return createEmptyAnalysisIndex();
+  }
+}
+
+async function writeAnalysisIndex(indexPayload) {
+  if (!state.resultsDirectoryHandle) {
+    return;
+  }
+
+  const hasPermission = await ensureResultsFolderWritePermission();
+  if (!hasPermission) {
+    throw new Error("Нет доступа к папке результатов для записи analysis-index.json.");
+  }
+
+  const fileHandle = await state.resultsDirectoryHandle.getFileHandle(analysisIndexFileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(`${JSON.stringify(indexPayload, null, 2)}\n`);
+  await writable.close();
+}
+
+function splitOffersAgainstIndex(offers, indexPayload) {
+  const indexMap = new Map((indexPayload.entries || []).map((entry) => [entry.key, entry]));
+  const cachedOffers = [];
+  const offersToAnalyze = [];
+
+  offers.forEach((offer) => {
+    const existing = indexMap.get(offer.offer_key);
+    if (existing && existing.content_hash === offer.content_hash && existing.result) {
+      cachedOffers.push({
+        ...existing.result,
+        result_source: "cached",
+        title: offer.title,
+        url: offer.url,
+        description: offer.description
+      });
+      return;
+    }
+
+    offersToAnalyze.push(offer);
+  });
+
+  return { cachedOffers, offersToAnalyze };
+}
+
+function mergeAnalysisResults(cachedOffers, analyzedPayload) {
+  return {
+    offers: [
+      ...cachedOffers,
+      ...(Array.isArray(analyzedPayload?.offers) ? analyzedPayload.offers : [])
+    ]
+  };
+}
+
+function upsertAnalysisIndex(indexPayload, analyzedOffers, analyzedResult) {
+  const nextEntries = new Map((indexPayload.entries || []).map((entry) => [entry.key, entry]));
+  const analyzedResults = Array.isArray(analyzedResult?.offers) ? analyzedResult.offers : [];
+
+  analyzedOffers.forEach((offer) => {
+    const matchedResult = analyzedResults.find((item) => item.offer_index === offer.offer_index);
+    if (!matchedResult) {
+      return;
+    }
+
+    nextEntries.set(offer.offer_key, {
+      key: offer.offer_key,
+      content_hash: offer.content_hash,
+      analyzed_at: new Date().toISOString(),
+      model: elements.model.value.trim(),
+      search_prefix: elements.searchPrefix.value.trim(),
+      result: matchedResult
+    });
+  });
+
+  return {
+    entries: Array.from(nextEntries.values())
+  };
+}
+
+function getOfferKey(offer) {
+  return [
+    offer.url || "",
+    offer.title || "",
+    offer.description || "",
+    offer.offer_index || ""
+  ].join("::");
+}
+
+function buildExportFileName() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const model = (elements.model.value.trim() || "model").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const searchPrefix = (elements.searchPrefix.value.trim() || "search").replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `${stamp}_${model}_${searchPrefix}.json`;
+}
+
+function buildFavouriteFileName() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${stamp}_favourite.json`;
 }
 
 function runCssSelector(doc, selector) {
@@ -290,20 +461,123 @@ function updatePreview(matches) {
 }
 
 function setResult(text, isError = false) {
-  elements.resultOutput.textContent = text;
-  elements.resultOutput.classList.toggle("error", isError);
-  elements.resultOutput.classList.toggle("muted", !isError && text === "Пока пусто.");
+  elements.resultStatus.textContent = text;
+  elements.resultStatus.classList.toggle("error", isError);
+  elements.resultStatus.classList.toggle("muted", !isError && text === "Пока пусто.");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderList(items) {
+  if (!Array.isArray(items) || !items.length) {
+    return "<div class=\"result-empty\">None</div>";
+  }
+
+  return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderResults(data) {
+  const offers = Array.isArray(data?.offers) ? [...data.offers] : [];
+
+  if (!offers.length) {
+    elements.resultOutput.innerHTML = "<div class=\"result-empty\">No offer results returned.</div>";
+    return;
+  }
+
+  offers.sort((left, right) => {
+    const leftScore = typeof left.fit_score === "number" ? left.fit_score : -1;
+    const rightScore = typeof right.fit_score === "number" ? right.fit_score : -1;
+    return rightScore - leftScore;
+  });
+
+  elements.resultOutput.innerHTML = offers.map((offer) => {
+    const offerKey = getOfferKey(offer);
+    const isFavourite = state.favouriteKeys.has(offerKey);
+    const source = offer.result_source === "cached" ? "cached" : "fresh";
+    const urlMarkup = offer.url
+      ? `<a class="result-link" href="${escapeHtml(offer.url)}" target="_blank" rel="noreferrer">${escapeHtml(offer.url)}</a>`
+      : "<span class=\"muted\">No link</span>";
+
+    return `
+      <article class="result-card">
+        <section class="result-pane">
+          <p class="result-label">Offer ${escapeHtml(offer.offer_index ?? "?")}</p>
+          <h3 class="result-title">${escapeHtml(offer.title || `Offer ${offer.offer_index ?? "?"}`)}</h3>
+          <p class="result-description">${escapeHtml(offer.description || "No description available.")}</p>
+        </section>
+        <section class="result-pane result-meta">
+          <div class="result-meta-top">
+            <span class="score-badge">fit_score: ${escapeHtml(offer.fit_score ?? "?")}</span>
+            <span class="source-badge ${source}">${source}</span>
+            <button class="action-button favourite-button ${isFavourite ? "is-active" : ""}" type="button" data-offer-key="${escapeHtml(offerKey)}">
+              ${isFavourite ? "In Favourite" : "Add Favourite"}
+            </button>
+          </div>
+          <p class="result-line"><strong>Recommendation:</strong> ${escapeHtml(offer.recommendation || "N/A")}</p>
+          <p class="result-line"><strong>Niche match:</strong> ${escapeHtml(offer.niche_match || "N/A")}</p>
+          <p class="result-line"><strong>Project shape:</strong> ${escapeHtml(offer.suggested_project_shape || "N/A")}</p>
+          <p class="result-line"><strong>Offer link:</strong><br>${urlMarkup}</p>
+          <div class="result-section">
+            <p class="result-label">Key Reasons</p>
+            ${renderList(offer.key_reasons)}
+          </div>
+          <div class="result-section">
+            <p class="result-label">Red Flags</p>
+            ${renderList(offer.red_flags)}
+          </div>
+          <div class="result-section">
+            <p class="result-label">Questions To Ask Client</p>
+            ${renderList(offer.questions_to_ask_client)}
+          </div>
+        </section>
+      </article>
+    `;
+  }).join("");
+
+  elements.resultOutput.querySelectorAll(".favourite-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-offer-key");
+      if (!key) {
+        return;
+      }
+
+      if (state.favouriteKeys.has(key)) {
+        state.favouriteKeys.delete(key);
+      } else {
+        state.favouriteKeys.add(key);
+      }
+
+      updateFavouriteUiState();
+      renderResults(state.lastResultJson);
+    });
+  });
 }
 
 function setResultJson(data) {
   state.lastResultJson = data;
   elements.saveJsonButton.disabled = false;
-  setResult(JSON.stringify(data, null, 2));
+  updateFavouriteUiState();
+  setResult(`Loaded ${Array.isArray(data?.offers) ? data.offers.length : 0} analyzed offers.`);
+  renderResults(data);
 }
 
 function clearResultJson() {
   state.lastResultJson = null;
+  state.favouriteKeys = new Set();
   elements.saveJsonButton.disabled = true;
+  elements.saveFavouriteButton.disabled = true;
+  elements.resultOutput.innerHTML = "";
+}
+
+function updateFavouriteUiState() {
+  elements.saveFavouriteButton.disabled = state.favouriteKeys.size === 0;
 }
 
 function parseModelJson(payload) {
@@ -334,14 +608,58 @@ function parseModelJson(payload) {
   throw new Error("Модель не вернула JSON ни в output_text, ни в output[].content[].text.");
 }
 
+async function loadResultJsonFromFile(file) {
+  const text = await file.text();
+  let parsed;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error("Не удалось распарсить выбранный JSON-файл.");
+  }
+
+  if (!parsed || !Array.isArray(parsed.offers)) {
+    throw new Error("JSON-файл не содержит ожидаемое поле offers.");
+  }
+
+  return parsed;
+}
+
+function mergeLoadedResults(results) {
+  return {
+    offers: results.flatMap((result) => Array.isArray(result.offers) ? result.offers : [])
+  };
+}
+
+function buildFavouritePayload() {
+  const offers = Array.isArray(state.lastResultJson?.offers) ? state.lastResultJson.offers : [];
+  return {
+    offers: offers.filter((offer) => state.favouriteKeys.has(getOfferKey(offer)))
+  };
+}
+
 function saveResultJson() {
   if (!state.lastResultJson) {
     return;
   }
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const fileName = `offer-analysis-${stamp}.json`;
+  const fileName = buildExportFileName();
   const blob = new Blob([`${JSON.stringify(state.lastResultJson, null, 2)}\n`], {
+    type: "application/json"
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function savePayloadAsDownload(payload, fileName) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], {
     type: "application/json"
   });
   const url = URL.createObjectURL(blob);
@@ -365,15 +683,29 @@ async function saveResultJsonToChosenFolder() {
     throw new Error("Нет доступа на запись в выбранную папку.");
   }
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const fileName = `offer-analysis-${stamp}.json`;
+  const fileName = buildExportFileName();
   const fileHandle = await state.resultsDirectoryHandle.getFileHandle(fileName, { create: true });
   const writable = await fileHandle.createWritable();
 
   await writable.write(`${JSON.stringify(state.lastResultJson, null, 2)}\n`);
   await writable.close();
+  return true;
+}
 
-  setResult(`JSON сохранен в выбранную папку как ${fileName}.`);
+async function savePayloadToChosenFolder(payload, fileName) {
+  if (!state.resultsDirectoryHandle) {
+    return false;
+  }
+
+  const permission = await state.resultsDirectoryHandle.requestPermission({ mode: "readwrite" });
+  if (permission !== "granted") {
+    throw new Error("Нет доступа на запись в выбранную папку.");
+  }
+
+  const fileHandle = await state.resultsDirectoryHandle.getFileHandle(fileName, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(`${JSON.stringify(payload, null, 2)}\n`);
+  await writable.close();
   return true;
 }
 
@@ -461,7 +793,7 @@ function extractMatches() {
   return matches;
 }
 
-function buildAnalysisInput() {
+function buildAnalysisInputForOffers(offers) {
   const profile = sanitizeText(state.profileText);
   const analysisPrompt = elements.analysisPrompt.value.trim();
 
@@ -469,8 +801,8 @@ function buildAnalysisInput() {
     throw new Error("Профиль не загружен.");
   }
 
-  if (!state.combinedText) {
-    throw new Error("Сначала извлеки текст из HTML.");
+  if (!offers.length) {
+    throw new Error("Нет офферов для анализа.");
   }
 
   return [
@@ -478,14 +810,14 @@ function buildAnalysisInput() {
     profile,
     "",
     "JOB OFFERS:",
-    state.combinedText,
+    buildOffersText(offers),
     "",
     "INSTRUCTION:",
     analysisPrompt
   ].join("\n");
 }
 
-async function analyzeOffer() {
+async function analyzeOffer(offers) {
   const apiKey = elements.apiKey.value.trim();
   const model = elements.model.value.trim();
 
@@ -497,7 +829,7 @@ async function analyzeOffer() {
     throw new Error("Укажи модель.");
   }
 
-  const input = buildAnalysisInput();
+  const input = buildAnalysisInputForOffers(offers);
   setResult("Идет анализ...");
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -580,8 +912,7 @@ async function analyzeOffer() {
   }
 
   const payload = await response.json();
-  const parsedResult = mergeOfferMetadata(parseModelJson(payload));
-  setResultJson(parsedResult);
+  return mergeOfferMetadata(parseModelJson(payload), offers);
 }
 
 elements.cssModeButton.addEventListener("click", () => setMode("css"));
@@ -593,6 +924,10 @@ elements.apiKey.addEventListener("input", (event) => {
 
 elements.model.addEventListener("input", (event) => {
   persistField(storageKeys.model, event.target.value.trim());
+});
+
+elements.searchPrefix.addEventListener("change", (event) => {
+  persistField(storageKeys.searchPrefix, event.target.value.trim());
 });
 
 elements.selectorInput.addEventListener("input", (event) => {
@@ -611,6 +946,7 @@ elements.extractButton.addEventListener("click", () => {
 });
 
 elements.analyzeButton.addEventListener("click", async () => {
+  elements.analyzeButton.disabled = true;
   try {
     if (!state.profileText) {
       await loadProfile();
@@ -618,10 +954,37 @@ elements.analyzeButton.addEventListener("click", async () => {
     if (!state.combinedText) {
       extractMatches();
     }
-    await analyzeOffer();
+
+    const indexedOffers = await enrichOffersWithIdentity(state.extractedOffers);
+    const indexPayload = await readAnalysisIndex();
+    const { cachedOffers, offersToAnalyze } = splitOffersAgainstIndex(indexedOffers, indexPayload);
+
+    if (!offersToAnalyze.length) {
+      const cachedOnlyPayload = mergeAnalysisResults(cachedOffers, { offers: [] });
+      setResultJson(cachedOnlyPayload);
+      setResult(`Loaded ${cachedOffers.length} cached offers. No new analysis needed.`);
+      return;
+    }
+
+    const analyzedPayload = await analyzeOffer(offersToAnalyze);
+    analyzedPayload.offers = analyzedPayload.offers.map((offer) => ({
+      ...offer,
+      result_source: "fresh"
+    }));
+    const mergedPayload = mergeAnalysisResults(cachedOffers, analyzedPayload);
+
+    setResultJson(mergedPayload);
+    setResult(`Loaded ${cachedOffers.length} cached and analyzed ${offersToAnalyze.length} new/changed offers.`);
+
+    if (state.resultsDirectoryHandle) {
+      const nextIndex = upsertAnalysisIndex(indexPayload, offersToAnalyze, analyzedPayload);
+      await writeAnalysisIndex(nextIndex);
+    }
   } catch (error) {
     clearResultJson();
     setResult(error.message, true);
+  } finally {
+    elements.analyzeButton.disabled = false;
   }
 });
 
@@ -645,6 +1008,32 @@ elements.chooseFolderButton.addEventListener("click", async () => {
   }
 });
 
+elements.loadJsonButton.addEventListener("click", () => {
+  elements.loadJsonInput.click();
+});
+
+elements.loadJsonInput.addEventListener("change", async (event) => {
+  const files = Array.from(event.target.files || []);
+
+  if (!files.length) {
+    return;
+  }
+
+  try {
+    const parsedResults = await Promise.all(files.map((file) => loadResultJsonFromFile(file)));
+    const merged = mergeLoadedResults(parsedResults);
+    state.lastResultJson = merged;
+    elements.saveJsonButton.disabled = false;
+    renderResults(merged);
+    setResult(`Loaded ${merged.offers.length} offers from ${files.length} file(s).`);
+  } catch (error) {
+    clearResultJson();
+    setResult(error.message, true);
+  } finally {
+    elements.loadJsonInput.value = "";
+  }
+});
+
 elements.saveJsonButton.addEventListener("click", async () => {
   try {
     if (state.resultsDirectoryHandle) {
@@ -660,10 +1049,36 @@ elements.saveJsonButton.addEventListener("click", async () => {
   }
 });
 
+elements.saveFavouriteButton.addEventListener("click", async () => {
+  try {
+    const payload = buildFavouritePayload();
+    if (!payload.offers.length) {
+      setResult("No favourite offers selected.", true);
+      return;
+    }
+
+    const fileName = buildFavouriteFileName();
+
+    if (state.resultsDirectoryHandle) {
+      const saved = await savePayloadToChosenFolder(payload, fileName);
+      if (saved) {
+        setResult(`Saved ${payload.offers.length} favourite offer(s).`);
+        return;
+      }
+    }
+
+    savePayloadAsDownload(payload, fileName);
+    setResult(`Saved ${payload.offers.length} favourite offer(s).`);
+  } catch (error) {
+    setResult(error.message, true);
+  }
+});
+
 setMode("xpath");
 loadPersistedSettings();
 updatePreview([]);
 updateFolderStatus();
+setResult("Пока пусто.");
 loadProfile().catch((error) => {
   clearResultJson();
   elements.profileStatus.textContent = error.message;

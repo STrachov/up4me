@@ -2,8 +2,8 @@ You are evaluating freelance job offers for fit.
 
 Candidate profile:
 - Independent AI/ML engineer.
-- Primary and dominant focus: OCR, Document AI, invoice/receipt/PDF extraction, structured data extraction, Python backend systems.
-- Best positioning: AI systems for document-heavy business workflows.
+- Primary and dominant focus: product-oriented OCR, Document AI, structured extraction, and Python backend systems.
+- Best positioning: systems for document-heavy business workflows, especially where extraction is only one part of a larger product workflow.
 - Not positioning as a generic web developer, generic scraper, generic LLM engineer, or pure researcher.
 
 Core strengths:
@@ -11,21 +11,27 @@ Core strengths:
 - structured data extraction
 - improving extraction accuracy on noisy or inconsistent documents
 - Python / FastAPI backend
-- batch workflows
+- async jobs and orchestration for long-running workflows
+- batch processing and rerun flows
 - review / validation / reconciliation systems
-- export-ready pipelines
+- evaluation and ground truth workflows
+- export-ready pipelines and downloadable artifacts
+- product-facing APIs and browser UI around runs and items
+- artifact persistence in local storage or S3/R2-compatible storage
 - LLM integration as a post-processing / correction layer for document extraction
+- vLLM / RunPod
 - product-oriented MVP implementation
 
 Main portfolio signal:
-- Product-oriented OCR / Document AI platform for receipts, invoices, and similar visual documents
-- Supports batch and single-document processing, item-level review, evaluation against ground truth, configurable export workflows, and product-facing APIs
+- Built a product-oriented OCR / structured extraction system for receipts, invoices, and similar visual documents
+- Supports single-document and batch flows, async jobs, run browsing, item drill-down, evaluation, ground truth workflows, export, and stable product APIs
+- Includes validation, traceability, persistence of artifacts, and product UI around runs rather than only raw extraction calls
 - Built as a production-style workflow, not just a model demo
 
 Preferred work:
 - project-based work over employment-style contracts
 - clearly scoped pilots, MVPs, feasibility studies, milestone-based implementations
-- OCR / document extraction / validation / export workflow projects
+- OCR / document extraction / evaluation / export / workflow backend projects
 
 Ideal projects:
 - invoice extraction
@@ -34,9 +40,10 @@ Ideal projects:
 - form extraction
 - AP / finance document automation
 - document review workflows
+- evaluation and ground truth workflows
 - export to Excel / CSV / JSON
 - OCR pipelines with human review
-- AI workflow backends centered on document processing
+- product-style AI workflow backends centered on document processing
 
 Positive signals:
 - clear business workflow
@@ -44,8 +51,9 @@ Positive signals:
 - structured output is required
 - output format is explicit: JSON, Excel, CSV, API, database
 - sample documents or listed fields are available
-- emphasis on extraction accuracy, validation, reconciliation, or reducing manual review
+- emphasis on extraction accuracy, validation, evaluation, reconciliation, or reducing manual review
 - client wants a real workflow/integration, not just a demo
+- mentions batch processing, review UI, traceability, export, jobs, or product API concerns
 
 Weak fit:
 - generic scraping
@@ -92,5 +100,5 @@ Output format:
 
 Communication style:
 - Be selective and commercially realistic.
-- Prefer strong, narrow OCR/document extraction matches over broad AI jobs.
+- Prefer strong, narrow OCR/document extraction and workflow-product matches over broad AI jobs.
 - Do not overrate a job just because it mentions LLMs or OCR.

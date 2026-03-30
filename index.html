@@ -29,7 +29,17 @@
 
       <label class="field">
         <span>Модель</span>
-        <input id="model" type="text" value="gpt-5-mini">
+        <input id="model" type="text" value="gpt-5.4-mini">
+      </label>
+
+      <label class="field">
+        <span>Search Prefix</span>
+        <select id="searchPrefix">
+          <option value="best_matches">best_matches</option>
+          <option value="ai_pdf_data_extraction">ai_pdf_data_extraction</option>
+          <option value="document_extraction">document_extraction</option>
+          <option value="ocr_invoices">ocr_invoices</option>
+        </select>
       </label>
 
       <label class="field">
@@ -64,7 +74,7 @@
     }
   ]
 }
-Для каждого оффера сохрани его порядковый номер в поле offer_index. Оцени fit_score от 0 до 100. Не завышай оценку только из-за AI-ключевых слов. Смотри на реальное совпадение по OCR, Document AI, structured extraction, extraction quality, validation/review workflow, Python backend, коммерческую адекватность и project-based fit.</textarea>
+Для каждого оффера сохрани его порядковый номер в поле offer_index. Пиши поля key_reasons, red_flags и questions_to_ask_client на русском языке. Enum-поля recommendation, niche_match и suggested_project_shape не переводи и возвращай строго в формате схемы. Оцени fit_score от 0 до 100. Не завышай оценку только из-за AI-ключевых слов. Смотри на реальное совпадение по OCR, Document AI, structured extraction, extraction quality, validation/review workflow, Python backend, коммерческую адекватность и project-based fit.</textarea>
       </label>
     </section>
 
@@ -132,11 +142,15 @@
         <h2>Результат анализа</h2>
         <div class="button-row">
           <button id="chooseFolderButton" class="action-button" type="button">Choose Results Folder</button>
+          <button id="loadJsonButton" class="action-button" type="button">Load JSON</button>
+          <button id="saveFavouriteButton" class="action-button" type="button" disabled>Save Favourite</button>
           <button id="saveJsonButton" class="action-button" type="button" disabled>Save JSON</button>
         </div>
       </div>
       <div id="folderStatus" class="inline-note">Папка не выбрана. Сохранение будет через обычную загрузку.</div>
-      <pre id="resultOutput" class="output-block muted">Пока пусто.</pre>
+      <div id="resultStatus" class="inline-note">Пока пусто.</div>
+      <div id="resultOutput" class="results-view"></div>
+      <input id="loadJsonInput" type="file" accept="application/json,.json" multiple hidden>
     </section>
   </main>
 
