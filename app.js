@@ -189,6 +189,42 @@ function loadPersistedSettings() {
   }
 }
 
+function updateFolderStatus() {
+  if (!supportsDirectoryPicker()) {
+    elements.folderStatus.textContent = "Браузер не поддерживает выбор папки. Без папки результатов анализ недоступен.";
+    elements.folderStatus.classList.add("warning");
+    return;
+  }
+
+  if (!state.resultsDirectoryHandle) {
+    elements.folderStatus.textContent = "Папка результатов не выбрана. Без нее анализ не будет запущен.";
+    elements.folderStatus.classList.add("warning");
+    return;
+  }
+
+  const folderName = state.resultsDirectoryHandle.name || "selected-folder";
+  elements.folderStatus.textContent = `Выбрана папка: ${folderName}`;
+  elements.folderStatus.classList.remove("warning");
+}
+
+async function hasUsableResultsFolder() {
+  if (!supportsDirectoryPicker() || !state.resultsDirectoryHandle) {
+    return false;
+  }
+
+  try {
+    const permission = await state.resultsDirectoryHandle.queryPermission({ mode: "readwrite" });
+    return permission === "granted";
+  } catch (error) {
+    return false;
+  }
+}
+
+async function refreshAnalyzeAvailability() {
+  const hasFolder = await hasUsableResultsFolder();
+  elements.analyzeButton.disabled = !hasFolder;
+}
+
 function persistField(key, value) {
   if (value) {
     localStorage.setItem(key, value);
@@ -819,17 +855,20 @@ async function chooseResultsFolder() {
   state.resultsDirectoryHandle = handle;
   await writeStoredDirectoryHandle(handle);
   updateFolderStatus();
+  await refreshAnalyzeAvailability();
 }
 
 async function restoreResultsFolder() {
   if (!supportsDirectoryPicker()) {
     updateFolderStatus();
+    await refreshAnalyzeAvailability();
     return;
   }
 
   const handle = await readStoredDirectoryHandle();
   if (!handle) {
     updateFolderStatus();
+    await refreshAnalyzeAvailability();
     return;
   }
 
@@ -838,6 +877,7 @@ async function restoreResultsFolder() {
 
   if (permission === "granted") {
     updateFolderStatus();
+    await refreshAnalyzeAvailability();
     return;
   }
 
@@ -1044,6 +1084,11 @@ elements.extractButton.addEventListener("click", () => {
 elements.analyzeButton.addEventListener("click", async () => {
   elements.analyzeButton.disabled = true;
   try {
+    if (!await hasUsableResultsFolder()) {
+      updateFolderStatus();
+      throw new Error("Сначала выбери папку результатов и дай доступ на запись. Без этого анализ не запускается.");
+    }
+
     if (!state.profileText) {
       await loadProfile();
     }
@@ -1079,7 +1124,7 @@ elements.analyzeButton.addEventListener("click", async () => {
     clearResultJson();
     setResult(error.message, true);
   } finally {
-    elements.analyzeButton.disabled = false;
+    await refreshAnalyzeAvailability();
   }
 });
 
@@ -1169,10 +1214,39 @@ elements.saveFavouriteButton.addEventListener("click", async () => {
   }
 });
 
+async function restoreResultsFolder() {
+  if (!supportsDirectoryPicker()) {
+    updateFolderStatus();
+    await refreshAnalyzeAvailability();
+    return;
+  }
+
+  const handle = await readStoredDirectoryHandle();
+  if (!handle) {
+    updateFolderStatus();
+    await refreshAnalyzeAvailability();
+    return;
+  }
+
+  const permission = await handle.queryPermission({ mode: "readwrite" });
+  state.resultsDirectoryHandle = handle;
+
+  if (permission === "granted") {
+    updateFolderStatus();
+    await refreshAnalyzeAvailability();
+    return;
+  }
+
+  elements.folderStatus.textContent = `Папка ${handle.name || "results"} сохранена, но доступ нужно подтвердить заново. Без этого анализ недоступен.`;
+  elements.folderStatus.classList.add("warning");
+  await refreshAnalyzeAvailability();
+}
+
 setMode("xpath");
 loadPersistedSettings();
 updatePreview([]);
 updateFolderStatus();
+elements.analyzeButton.disabled = true;
 setResult("Пока пусто.");
 loadProfile().catch((error) => {
   clearResultJson();
@@ -1181,4 +1255,6 @@ loadProfile().catch((error) => {
 });
 restoreResultsFolder().catch((error) => {
   elements.folderStatus.textContent = error.message;
+  elements.folderStatus.classList.add("warning");
+  elements.analyzeButton.disabled = true;
 });

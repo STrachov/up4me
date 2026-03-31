@@ -194,6 +194,12 @@ textarea {
   font-weight: 700;
 }
 
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
+
 .action-button:hover,
 .mode-button:hover {
   transform: translateY(-1px);
@@ -202,6 +208,20 @@ textarea {
 .action-button-accent {
   background: var(--accent);
   color: #f6fffd;
+}
+
+.action-button-folder-required {
+  background: #fff1c7;
+  color: #6a4100;
+  box-shadow: inset 0 0 0 1px rgba(180, 110, 0, 0.18);
+}
+
+.action-button-folder-required::after {
+  content: " *";
+}
+
+.action-button-folder-required:hover {
+  background: #ffe7a2;
 }
 
 .stats {
@@ -270,6 +290,12 @@ textarea {
   border-radius: var(--radius-sm);
   background: var(--panel-strong);
   color: var(--muted);
+}
+
+.inline-note.warning {
+  border-color: rgba(180, 110, 0, 0.24);
+  background: #fff7df;
+  color: #7a4a00;
 }
 
 .output-block.error {
