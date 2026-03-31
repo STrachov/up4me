@@ -46,12 +46,14 @@ const elements = {
 
 const dbConfig = {
   name: "offer-matcher-db",
-  version: 1,
+  version: 2,
   storeName: "settings",
+  analysisStoreName: "analysis",
   directoryKey: "results-directory"
 };
 
 const analysisIndexFileName = "analysis-index.json";
+const localAnalysisIndexKey = "analysis-index";
 
 function setMode(mode) {
   state.mode = mode;
@@ -75,6 +77,9 @@ function openSettingsDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(dbConfig.storeName)) {
         db.createObjectStore(dbConfig.storeName);
+      }
+      if (!db.objectStoreNames.contains(dbConfig.analysisStoreName)) {
+        db.createObjectStore(dbConfig.analysisStoreName);
       }
     });
 
@@ -105,6 +110,39 @@ async function writeStoredDirectoryHandle(handle) {
     const transaction = db.transaction(dbConfig.storeName, "readwrite");
     const store = transaction.objectStore(dbConfig.storeName);
     const request = store.put(handle, dbConfig.directoryKey);
+
+    request.addEventListener("success", () => resolve());
+    request.addEventListener("error", () => reject(request.error));
+    transaction.addEventListener("complete", () => db.close());
+    transaction.addEventListener("error", () => reject(transaction.error));
+  });
+}
+
+async function readLocalAnalysisIndex() {
+  const db = await openSettingsDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(dbConfig.analysisStoreName, "readonly");
+    const store = transaction.objectStore(dbConfig.analysisStoreName);
+    const request = store.get(localAnalysisIndexKey);
+
+    request.addEventListener("success", () => {
+      const payload = request.result;
+      resolve(Array.isArray(payload?.entries) ? payload : createEmptyAnalysisIndex());
+    });
+    request.addEventListener("error", () => reject(request.error));
+    transaction.addEventListener("complete", () => db.close());
+    transaction.addEventListener("error", () => reject(transaction.error));
+  });
+}
+
+async function writeLocalAnalysisIndex(indexPayload) {
+  const db = await openSettingsDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(dbConfig.analysisStoreName, "readwrite");
+    const store = transaction.objectStore(dbConfig.analysisStoreName);
+    const request = store.put(indexPayload, localAnalysisIndexKey);
 
     request.addEventListener("success", () => resolve());
     request.addEventListener("error", () => reject(request.error));
@@ -282,8 +320,50 @@ async function enrichOffersWithIdentity(offers) {
   }));
 }
 
+async function buildAnalysisSignature() {
+  const profileHash = await sha256Hex(sanitizeText(state.profileText || ""));
+  const promptHash = await sha256Hex(elements.analysisPrompt.value.trim());
+
+  return JSON.stringify({
+    model: elements.model.value.trim(),
+    search_prefix: elements.searchPrefix.value.trim(),
+    profile_hash: profileHash,
+    prompt_hash: promptHash
+  });
+}
+
 function createEmptyAnalysisIndex() {
   return { entries: [] };
+}
+
+function normalizeAnalysisIndex(payload) {
+  return Array.isArray(payload?.entries) ? payload : createEmptyAnalysisIndex();
+}
+
+function mergeAnalysisIndexes(...payloads) {
+  const merged = new Map();
+
+  payloads
+    .map((payload) => normalizeAnalysisIndex(payload))
+    .forEach((payload) => {
+      payload.entries.forEach((entry) => {
+        const existing = merged.get(entry.key);
+        if (!existing) {
+          merged.set(entry.key, entry);
+          return;
+        }
+
+        const existingAt = existing.analyzed_at || "";
+        const nextAt = entry.analyzed_at || "";
+        if (nextAt >= existingAt) {
+          merged.set(entry.key, entry);
+        }
+      });
+    });
+
+  return {
+    entries: Array.from(merged.values())
+  };
 }
 
 async function ensureResultsFolderWritePermission() {
@@ -296,11 +376,15 @@ async function ensureResultsFolderWritePermission() {
 }
 
 async function readAnalysisIndex() {
+  const localIndex = await readLocalAnalysisIndex();
   if (!state.resultsDirectoryHandle) {
-    return createEmptyAnalysisIndex();
+    return localIndex;
   }
 
   const hasPermission = await ensureResultsFolderWritePermission();
+  if (!hasPermission) {
+    return localIndex;
+  }
   if (!hasPermission) {
     throw new Error("Нет доступа к папке результатов для чтения analysis-index.json.");
   }
@@ -310,23 +394,29 @@ async function readAnalysisIndex() {
   const text = await file.text();
 
   if (!text.trim()) {
-    return createEmptyAnalysisIndex();
+    return localIndex;
   }
 
   try {
     const parsed = JSON.parse(text);
-    return Array.isArray(parsed.entries) ? parsed : createEmptyAnalysisIndex();
+    const merged = mergeAnalysisIndexes(localIndex, parsed);
+    await writeLocalAnalysisIndex(merged);
+    return merged;
   } catch (error) {
-    return createEmptyAnalysisIndex();
+    return localIndex;
   }
 }
 
 async function writeAnalysisIndex(indexPayload) {
+  await writeLocalAnalysisIndex(indexPayload);
   if (!state.resultsDirectoryHandle) {
     return;
   }
 
   const hasPermission = await ensureResultsFolderWritePermission();
+  if (!hasPermission) {
+    return;
+  }
   if (!hasPermission) {
     throw new Error("Нет доступа к папке результатов для записи analysis-index.json.");
   }
@@ -337,14 +427,19 @@ async function writeAnalysisIndex(indexPayload) {
   await writable.close();
 }
 
-function splitOffersAgainstIndex(offers, indexPayload) {
+function splitOffersAgainstIndex(offers, indexPayload, analysisSignature) {
   const indexMap = new Map((indexPayload.entries || []).map((entry) => [entry.key, entry]));
   const cachedOffers = [];
   const offersToAnalyze = [];
 
   offers.forEach((offer) => {
     const existing = indexMap.get(offer.offer_key);
-    if (existing && existing.content_hash === offer.content_hash && existing.result) {
+    if (
+      existing &&
+      existing.content_hash === offer.content_hash &&
+      existing.analysis_signature === analysisSignature &&
+      existing.result
+    ) {
       cachedOffers.push({
         ...existing.result,
         result_source: "cached",
@@ -370,7 +465,7 @@ function mergeAnalysisResults(cachedOffers, analyzedPayload) {
   };
 }
 
-function upsertAnalysisIndex(indexPayload, analyzedOffers, analyzedResult) {
+function upsertAnalysisIndex(indexPayload, analyzedOffers, analyzedResult, analysisSignature) {
   const nextEntries = new Map((indexPayload.entries || []).map((entry) => [entry.key, entry]));
   const analyzedResults = Array.isArray(analyzedResult?.offers) ? analyzedResult.offers : [];
 
@@ -386,6 +481,7 @@ function upsertAnalysisIndex(indexPayload, analyzedOffers, analyzedResult) {
       analyzed_at: new Date().toISOString(),
       model: elements.model.value.trim(),
       search_prefix: elements.searchPrefix.value.trim(),
+      analysis_signature: analysisSignature,
       result: matchedResult
     });
   });
@@ -957,7 +1053,8 @@ elements.analyzeButton.addEventListener("click", async () => {
 
     const indexedOffers = await enrichOffersWithIdentity(state.extractedOffers);
     const indexPayload = await readAnalysisIndex();
-    const { cachedOffers, offersToAnalyze } = splitOffersAgainstIndex(indexedOffers, indexPayload);
+    const analysisSignature = await buildAnalysisSignature();
+    const { cachedOffers, offersToAnalyze } = splitOffersAgainstIndex(indexedOffers, indexPayload, analysisSignature);
 
     if (!offersToAnalyze.length) {
       const cachedOnlyPayload = mergeAnalysisResults(cachedOffers, { offers: [] });
@@ -976,10 +1073,8 @@ elements.analyzeButton.addEventListener("click", async () => {
     setResultJson(mergedPayload);
     setResult(`Loaded ${cachedOffers.length} cached and analyzed ${offersToAnalyze.length} new/changed offers.`);
 
-    if (state.resultsDirectoryHandle) {
-      const nextIndex = upsertAnalysisIndex(indexPayload, offersToAnalyze, analyzedPayload);
-      await writeAnalysisIndex(nextIndex);
-    }
+    const nextIndex = upsertAnalysisIndex(indexPayload, offersToAnalyze, analyzedPayload, analysisSignature);
+    await writeAnalysisIndex(nextIndex);
   } catch (error) {
     clearResultJson();
     setResult(error.message, true);
