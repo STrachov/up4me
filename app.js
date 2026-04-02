@@ -151,7 +151,7 @@ async function writeLocalAnalysisIndex(indexPayload) {
   });
 }
 
-function updateFolderStatus() {
+function updateFolderStatusLegacy() {
   if (!supportsDirectoryPicker()) {
     elements.folderStatus.textContent = "Браузер не поддерживает выбор папки. Сохранение будет через обычную загрузку.";
     return;
@@ -421,9 +421,6 @@ async function readAnalysisIndex() {
   if (!hasPermission) {
     return localIndex;
   }
-  if (!hasPermission) {
-    throw new Error("Нет доступа к папке результатов для чтения analysis-index.json.");
-  }
 
   const fileHandle = await state.resultsDirectoryHandle.getFileHandle(analysisIndexFileName, { create: true });
   const file = await fileHandle.getFile();
@@ -452,9 +449,6 @@ async function writeAnalysisIndex(indexPayload) {
   const hasPermission = await ensureResultsFolderWritePermission();
   if (!hasPermission) {
     return;
-  }
-  if (!hasPermission) {
-    throw new Error("Нет доступа к папке результатов для записи analysis-index.json.");
   }
 
   const fileHandle = await state.resultsDirectoryHandle.getFileHandle(analysisIndexFileName, { create: true });
@@ -858,7 +852,7 @@ async function chooseResultsFolder() {
   await refreshAnalyzeAvailability();
 }
 
-async function restoreResultsFolder() {
+async function restoreResultsFolderLegacy() {
   if (!supportsDirectoryPicker()) {
     updateFolderStatus();
     await refreshAnalyzeAvailability();
